@@ -1,0 +1,46 @@
+alert:
+  beforeExpired: 10d
+  checkInterval: 12h
+  notifyUrl: https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
+
+log:
+  level: info
+
+defaultProvider: tencentcloud
+
+providerConfigs:
+  tencentcloud:
+    secretId: xxx
+    secretKey: xxx
+    # Optional. Delete older Tencent Cloud certificates asynchronously
+    # after the new certificate is externally verified. Default is false.
+    autoDeleteOldCertificates: true
+    autoApply:
+      enabled: true
+      pollInterval: 1m
+      pollTimeout: 10m
+      deleteDnsAutoRecord: true
+
+globalPostCommands:
+  - nginx -t
+  - nginx -s reload
+
+domains:
+  - domain: doc.yourdomain.com
+    # Optional. TLS port to probe and verify. Default is 443.
+    port: 443
+    certPath: /etc/nginx/ssl/doc.yourdomain.com.crt
+    keyPath: /etc/nginx/ssl/doc.yourdomain.com.key
+    postCommands:
+      - consul kv put certs/doc.yourdomain.com.crt @{{.CertPath}}
+      - consul kv put certs/doc.yourdomain.com.key @{{.KeyPath}}
+
+  - domain: api.yourdomain.com
+    # Example for a service published on a non-443 TLS port.
+    port: 5443
+    provider: tencentcloud
+    certPath: /etc/nginx/ssl/api.yourdomain.com.crt
+    keyPath: /etc/nginx/ssl/api.yourdomain.com.key
+    postCommands:
+      - consul kv put certs/api.yourdomain.com.crt @{{.CertPath}}
+      - consul kv put certs/api.yourdomain.com.key @{{.KeyPath}}
