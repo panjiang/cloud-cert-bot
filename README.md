@@ -30,12 +30,6 @@ curl -fsSL https://raw.githubusercontent.com/panjiang/cloud-cert-bot/main/script
   sudo env VERSION=<release-tag> sh
 ```
 
-## Rename Migration
-
-This project was previously named `cert-renewer`. The installer uses the new binary, service, and config defaults only; it does not automatically stop the old `cert-renewer` service or move `/etc/cert-renewer/config.yaml`.
-
-If you are upgrading from the old name, stop the old service, copy the config to `/etc/cloud-cert-bot/config.yaml`, verify one run with `cloud-cert-bot -run-once`, then enable the new `cloud-cert-bot` service.
-
 ## Install (Optional: China Proxy)
 
 If direct access to GitHub is slow or blocked, use a mirrored script URL, set `GITHUB_PROXY`, and install an explicit release tag.
