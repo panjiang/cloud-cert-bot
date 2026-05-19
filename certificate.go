@@ -42,15 +42,67 @@ func probeTLSCertificate(ctx context.Context, domain string, port int) (*Observe
 }
 
 func probeTLSCertificateWithRootCAs(ctx context.Context, domain string, port int, rootCAs *x509.CertPool) (*ObservedCertificate, error) {
+	return probeTLSCertificateWithConfig(ctx, domain, port, &tls.Config{
+		ServerName: domain,
+		RootCAs:    rootCAs,
+	})
+}
+
+func probeCurrentTLSCertificate(ctx context.Context, domain string, port int) (*ObservedCertificate, error) {
+	return probeCurrentTLSCertificateWithRootCAs(ctx, domain, port, nil)
+}
+
+func probeCurrentTLSCertificateWithRootCAs(ctx context.Context, domain string, port int, rootCAs *x509.CertPool) (*ObservedCertificate, error) {
+	observed, err := probeTLSCertificateWithRootCAs(ctx, domain, port, rootCAs)
+	if err == nil {
+		return observed, nil
+	}
+	if browserCertificateErrorCode(err) != "net::ERR_CERT_DATE_INVALID" {
+		return nil, err
+	}
+
+	cert, err := probeRawTLSCertificateWithConfig(ctx, domain, port, &tls.Config{
+		ServerName:         domain,
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := cert.VerifyHostname(domain); err != nil {
+		return nil, fmt.Errorf("tls dial: %w", browserCertificateError(err))
+	}
+	now := time.Now()
+	if now.Before(cert.NotBefore) || now.Before(cert.NotAfter) {
+		return nil, fmt.Errorf("tls dial: net::ERR_CERT_DATE_INVALID: certificate is not currently expired: current time %s notBefore %s notAfter %s",
+			now.Format(time.RFC3339), cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339))
+	}
+
+	return observeX509Certificate(domain, cert), nil
+}
+
+func probeTLSCertificateWithConfig(ctx context.Context, domain string, port int, config *tls.Config) (*ObservedCertificate, error) {
+	cert, err := probeRawTLSCertificateWithConfig(ctx, domain, port, config)
+	if err != nil {
+		return nil, err
+	}
+	return observeX509Certificate(domain, cert), nil
+}
+
+func probeRawTLSCertificateWithConfig(ctx context.Context, domain string, port int, config *tls.Config) (*x509.Certificate, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	tlsConfig := &tls.Config{ServerName: domain}
+	if config != nil {
+		tlsConfig = config.Clone()
+		if tlsConfig.ServerName == "" {
+			tlsConfig.ServerName = domain
+		}
+	}
+
 	dialer := &tls.Dialer{
 		NetDialer: &net.Dialer{},
-		Config: &tls.Config{
-			ServerName: domain,
-			RootCAs:    rootCAs,
-		},
+		Config:    tlsConfig,
 	}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(domain, strconv.Itoa(port)))
 	if err != nil {
@@ -67,7 +119,7 @@ func probeTLSCertificateWithRootCAs(ctx context.Context, domain string, port int
 		return nil, fmt.Errorf("no tls certificate")
 	}
 
-	return observeX509Certificate(domain, certs[0]), nil
+	return certs[0], nil
 }
 
 func browserCertificateError(err error) error {

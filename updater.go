@@ -54,7 +54,7 @@ func NewUpdater(cfg *Config, notifier Notifier) (*Updater, func(), error) {
 			notifier:         notifier,
 			providers:        providers,
 			deployer:         NewLocalDeployer(),
-			probeCertificate: probeTLSCertificate,
+			probeCertificate: probeCurrentTLSCertificate,
 			verifyDeployment: verifyExternalDeployment,
 			ctx:              ctx,
 		}, func() {

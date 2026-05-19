@@ -93,6 +93,63 @@ func TestProbeTLSCertificateStrictVerification(t *testing.T) {
 	})
 }
 
+func TestProbeCurrentTLSCertificateAllowsExpiredCurrentCertificate(t *testing.T) {
+	caCert, caKey := newTestCA(t)
+	serverCert, leaf := newTestServerCertificate(t, caCert, caKey, []string{"127.0.0.1"}, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+	rootCAs := x509.NewCertPool()
+	rootCAs.AddCert(caCert)
+
+	port, closeServer := startTestTLSServer(t, serverCert)
+	defer closeServer()
+
+	observed, err := probeCurrentTLSCertificateWithRootCAs(context.Background(), "127.0.0.1", port, rootCAs)
+	if err != nil {
+		t.Fatalf("probeCurrentTLSCertificate() error = %v", err)
+	}
+	if observed.Fingerprint != certificateFingerprint(leaf) {
+		t.Fatalf("Fingerprint = %q, want %q", observed.Fingerprint, certificateFingerprint(leaf))
+	}
+	if !observed.NotAfter.Equal(leaf.NotAfter) {
+		t.Fatalf("NotAfter = %s, want %s", observed.NotAfter, leaf.NotAfter)
+	}
+}
+
+func TestProbeCurrentTLSCertificateRejectsNotYetValidCertificate(t *testing.T) {
+	caCert, caKey := newTestCA(t)
+	serverCert, _ := newTestServerCertificate(t, caCert, caKey, []string{"127.0.0.1"}, time.Now().Add(time.Hour), time.Now().Add(2*time.Hour))
+	rootCAs := x509.NewCertPool()
+	rootCAs.AddCert(caCert)
+
+	port, closeServer := startTestTLSServer(t, serverCert)
+	defer closeServer()
+
+	_, err := probeCurrentTLSCertificateWithRootCAs(context.Background(), "127.0.0.1", port, rootCAs)
+	if err == nil {
+		t.Fatal("probeCurrentTLSCertificateWithRootCAs() expected error")
+	}
+	if !strings.Contains(err.Error(), "net::ERR_CERT_DATE_INVALID") {
+		t.Fatalf("error = %q, want date error code", err)
+	}
+}
+
+func TestProbeCurrentTLSCertificateRejectsExpiredHostnameMismatch(t *testing.T) {
+	caCert, caKey := newTestCA(t)
+	serverCert, _ := newTestServerCertificate(t, caCert, caKey, []string{"example.com"}, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+	rootCAs := x509.NewCertPool()
+	rootCAs.AddCert(caCert)
+
+	port, closeServer := startTestTLSServer(t, serverCert)
+	defer closeServer()
+
+	_, err := probeCurrentTLSCertificateWithRootCAs(context.Background(), "127.0.0.1", port, rootCAs)
+	if err == nil {
+		t.Fatal("probeCurrentTLSCertificateWithRootCAs() expected error")
+	}
+	if !strings.Contains(err.Error(), "net::ERR_CERT_COMMON_NAME_INVALID") {
+		t.Fatalf("error = %q, want common name error code", err)
+	}
+}
+
 func startTestTLSServer(t *testing.T, cert tls.Certificate) (int, func()) {
 	t.Helper()
 
